@@ -7,8 +7,8 @@
 0113662-240626123714530.zip
 Rplots.pdf
 _targets/*
-dsclim/*
 gis_folder/*
 input/*
-soil/*
 files/*
+dsclim
+soil

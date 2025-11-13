@@ -9,6 +9,10 @@ Rplots.pdf
 _targets/*
 gis_folder/*
 input/*
+!input/BIB_RECORDS.xlsx
+!input/neotoma_v2.csv
 files/*
 dsclim
 soil
+prueba.xlsx
+table_for sup_mat.R

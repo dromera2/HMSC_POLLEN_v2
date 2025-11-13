@@ -136,7 +136,7 @@ gcms <- c("CESM1-CAM5", "CSIRO-Mk3-6-0", "IPSL-CM5A-MR")
 
 colors <- c("#009E73", rep("#F0E442", 2))
 
-records <- read.xlsx("./input/REGISTROS.xlsx", sheetName = "complete") |> 
+records <- read.xlsx("./input/BIB_RECORDS.xlsx", sheetName = "complete") |> 
   select(-site)
 
 neotoma <- read.csv("./input/neotoma_v2.csv") %>%

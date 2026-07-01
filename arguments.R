@@ -86,8 +86,11 @@ prev_th[[2]] <- prev
 
 
 # Download data from this source: https://files.isric.org/soilgrids/former/2017-03-10/aggregated/1km/
-pH <- list.files(path = "./soil/1km/phh2o/", pattern = ".tif", full.names = TRUE )
-sand <- list.files(path = "./soil/1km/sand/", pattern = ".tif", full.names = TRUE )
+# pH <- list.files(path = "./soil/1km/phh2o/", pattern = ".tif", full.names = TRUE )
+# sand <- list.files(path = "./soil/1km/sand/", pattern = ".tif", full.names = TRUE )
+pH <- list.files(path = "../Public/Data/SoilGrids/1km/phh2o/", pattern = ".tif", full.names = TRUE )
+sand <- list.files(path = "../Public/Data/SoilGrids/1km/sand/", pattern = ".tif", full.names = TRUE )
+
   
 i <- 1:10
 # i <- 1:2

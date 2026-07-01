@@ -16,7 +16,8 @@ st_crs(mask_sf) <- crs(mask)
 
 records <- get_datasets(loc = mask_sf, datasettype = "pollen", all_data = TRUE) %>%
   neotoma2::filter(age_range_young >= 1) %>%
-  get_downloads(all_data = TRUE)
+  # get_downloads(all_data = TRUE)
+  get_downloads()
 
 count_by_site_NISP <- samples(records) %>%
   dplyr::filter(units == 'NISP' & 
@@ -85,12 +86,23 @@ count_by_site_NISP <- count_by_site_NISP %>%
   left_join(totalcount_by_site_and_timebin) %>%
   mutate(polprop = round(100 * value / totalpollen, 1))
 
+# count_by_site_NISP <- count_by_site_NISP %>%
+#   pivot_wider(names_from = variablename, 
+#               values_from = polprop, 
+#               values_fill = 0) %>% 
+#   select(timebins, long, lat, sp) %>%
+#   na.omit()
+
+###cambio dani 28/10/2025
 count_by_site_NISP <- count_by_site_NISP %>%
   pivot_wider(names_from = variablename, 
               values_from = polprop, 
               values_fill = 0) %>% 
-  select(timebins, long, lat, sp) %>%
+  select(datasetid, sitename, timebins, long, lat, sp) %>%
   na.omit()
+
+
+####
 
 thresholds <- count_by_site_NISP[,sp] %>% apply(2, FUN = function(x){
   max(x) * 0.05
@@ -104,7 +116,7 @@ count_by_site_NISP[,sp] <- count_by_site_NISP[,sp] %>% apply(2, FUN = function(x
 })
 
 
-write.csv(count_by_site_NISP, "./input/neotoma_v2.csv")
-
+# write.csv(count_by_site_NISP, "./input/neotoma_v2.csv")
+write.csv(count_by_site_NISP, "./input/neotoma_site_id.csv")
 
 

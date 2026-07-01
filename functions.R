@@ -175,44 +175,6 @@ rasterize_completeness <- function(comp_an, var, raster) {
   raster %>% terra::wrap()
 }
 
-sample.data <- function(complection_rast, gbif_data, complection_data,  threshold) {
-  raster <- complection_rast %>% terra::unwrap()
-  
-  filtered_data <- gbif_data %>% as.data.frame() 
-  
-  coords <- filtered_data %>% select(decimalLongitude, decimalLatitude)
-  
-  filtered_data$Cell_id <- cellFromXY(raster, coords)
-  
-    comp_data <- complection_data %>%
-      filter(c >= threshold) %>% 
-      select(Cell_id) 
-  
- 
-    filtered_th <- filtered_data %>%
-      filter(!(species %in% c("Abies pinsapo", "Cedrus atlantica"))) %>% 
-      filter(Cell_id %in% comp_data$Cell_id)
-    
-    filtered_under <- filtered_data %>% 
-      filter(species %in% c("Abies pinsapo", "Cedrus atlantica"))
-    
-  filtered_data <- bind_rows(filtered_th, filtered_under)
-  
-  weight_sample <- complection_rast %>% weight.rast(threshold)
-  
-  output <- left_join(filtered_data, weight_sample, by = "Cell_id") %>% 
-    mutate(weight = replace(weight, is.na(weight), 0))
-  
-  output
-  
-}
-
-under.threshold <- function(raw_data, filtered_data){
-  under_data <- raw_data %>% 
-    filter(!(gbifID %in% filtered_data$gbifID))
-  
-  under_data
-}
 
 get.climate.data <- function(bio, env, variables) {
   
@@ -269,47 +231,45 @@ get.Suse.data <- function(var, template, name, formula) {
 }
 
 
-filter.data <- function(type, data, comp_rast, comp_data, th){
-  if(type %in% c("over", "under")){
-    source_data <- data
-    data <- sample.data(comp_rast, data, comp_data, th)
-    if (type == "under"){
-      data <- under.threshold(source_data, data)
-    }
-  }
-  return(data)
-}
-
-
-
 prepare.data <- function(type, occ_data, comp_rast, comp_data, th, clim_data, soil_data,
                          cut, sample = NULL, i, species_list) {
   
-  
   base_data <- occ_data
   
-  occ_data <- filter.data(type, occ_data, comp_rast, comp_data, th)
-  
-  points <- occ_data %>% dplyr::select(c(species, decimalLongitude, decimalLatitude, weight))
-  
-  points <- points  %>%  
-    mutate(weight = coalesce(weight, 0)) %>% 
+  points <- occ_data %>% 
+    dplyr::select(c(species, decimalLongitude, decimalLatitude)) %>% 
     mutate(species = na_if(species, "")) %>% 
     na.omit() %>%
     st_as_sf(coords = c("decimalLongitude", "decimalLatitude"))
   
-  clim_data <- clim_data %>% terra::unwrap()
+  comp_rast <- comp_rast %>% terra::unwrap()
   
-  template <- clim_data %>% subset(1)
-  
-  points <- points %>% mutate(pixelId = cellFromXY(template, points %>% st_coordinates()), occurrence = 1) %>% 
-    dplyr::select(species, pixelId, occurrence, weight) %>% st_drop_geometry() %>% 
+  points <- points %>% mutate(pixelId = cellFromXY(comp_rast, points %>% st_coordinates()), occurrence = 1) %>% 
+    dplyr::select(species, pixelId, occurrence) %>% st_drop_geometry() %>% 
     pivot_wider(names_from = "species", values_from = "occurrence", values_fn = max, values_fill = 0) %>% 
     distinct(pixelId, .keep_all = TRUE)
   
-  coords <- template %>% xyFromCell(cell = points$pixelId) %>% as.data.frame()
+  comp_data <- comp_data %>%
+    filter(c >= th) %>% 
+    mutate(pixelId = Cell_id) %>% 
+    select(pixelId, c) 
   
-  clim <- clim_data %>%  terra::extract(y = points$pixelId)
+  points <- left_join(points, comp_data)
+  
+  weight_sample <- comp_rast %>%
+    weight.rast(th) %>% 
+    mutate(pixelId = Cell_id) %>% 
+    select(pixelId, weight)
+  
+  points <- left_join(points, weight_sample, by = "pixelId") %>% 
+    mutate(weight = replace(weight, is.na(weight), 0)) %>% 
+    filter(`Abies pinsapo` == 1 | `Cedrus atlantica` == 1 | c >= th) %>% 
+    select(-c)
+  
+  
+  coords <- comp_rast %>% xyFromCell(cell = points$pixelId) %>% as.data.frame()
+  
+  clim <- clim_data %>% unwrap() %>%  terra::extract(y = points$pixelId)
   
   soil <- soil_data %>% unwrap() %>% terra::extract(y = points$pixelId)
   
@@ -331,7 +291,6 @@ prepare.data <- function(type, occ_data, comp_rast, comp_data, th, clim_data, so
     
     model_data <- bind_rows(low_prevalent, subset_data)
     
-    
   }
   
   points <- base_data %>% dplyr::select(c(species, decimalLongitude, decimalLatitude))
@@ -341,14 +300,14 @@ prepare.data <- function(type, occ_data, comp_rast, comp_data, th, clim_data, so
     na.omit() %>%
     st_as_sf(coords = c("decimalLongitude", "decimalLatitude"))
   
-  points <- points %>% mutate(pixelId = cellFromXY(template, points %>% st_coordinates()), occurrence = 1) %>% 
+  points <- points %>% mutate(pixelId = cellFromXY(comp_rast, points %>% st_coordinates()), occurrence = 1) %>% 
     dplyr::select(species, pixelId, occurrence) %>% st_drop_geometry() %>% 
     pivot_wider(names_from = "species", values_from = "occurrence", values_fn = max, values_fill = 0) %>% 
     distinct(pixelId, .keep_all = TRUE)
   
-  coords <- template %>% xyFromCell(cell = points$pixelId) %>% as.data.frame()
+  coords <- comp_rast %>% xyFromCell(cell = points$pixelId) %>% as.data.frame()
   
-  clim <- clim_data %>%  terra::extract(y = points$pixelId)
+  clim <- clim_data %>% unwrap() %>%  terra::extract(y = points$pixelId)
   
   soil <- soil_data %>% unwrap() %>% terra::extract(y = points$pixelId)
   
@@ -360,6 +319,8 @@ prepare.data <- function(type, occ_data, comp_rast, comp_data, th, clim_data, so
   random_points <- anti_data %>% slice_sample(n = nrow(model_data)/4)
   
   model_data <- bind_rows(model_data, random_points) %>% na.omit()
+  
+  template <- clim_data %>% unwrap() %>%  subset(1)
   
   mask_rast <- ifel(!is.na(template), 1, 0)
   
@@ -387,7 +348,7 @@ prepare.data <- function(type, occ_data, comp_rast, comp_data, th, clim_data, so
   
   absences_cells <- absences_points %>% mutate(pixelId = cellFromXY(template, absences_points %>% st_coordinates()))
   
-  absences_clim <- clim_data %>%  terra::extract(y = absences_cells$pixelId)
+  absences_clim <- clim_data %>% unwrap() %>%   terra::extract(y = absences_cells$pixelId)
   
   absences_soil <- soil_data %>% unwrap() %>% terra::extract(y = absences_cells$pixelId)
   
@@ -412,7 +373,6 @@ prepare.data <- function(type, occ_data, comp_rast, comp_data, th, clim_data, so
   
   model_data
 }
-
 
 prepare.env.data <- function(start, end){
   
@@ -439,8 +399,10 @@ prepare.env.data <- function(start, end){
   time <- seq (1, (end - start + 1)*12 , 1200)
   
   
-  tmax <- dsclimtools::read_dsclim("./dsclim", "tasmax", start, end, calendar_dates = TRUE, proxy = FALSE)
+  # tmax <- dsclimtools::read_dsclim("./dsclim", "tasmax", start, end, calendar_dates = TRUE, proxy = FALSE)
+  tmax <- dsclimtools::read_dsclim("../Public/Data/dsclim_v1/netcdf", "tasmax", start, end, calendar_dates = TRUE, proxy = FALSE)
   
+    
   tmax_agg <- tmax |> 
     time.aggregate(time) |>
     lapply(FUN = function(x){x |> rast() |> stack()}) |> 
@@ -452,7 +414,7 @@ prepare.env.data <- function(start, end){
   rm(tmax)
   gc()
   
-  tmin <- dsclimtools::read_dsclim("./dsclim", "tasmin", start, end, calendar_dates = TRUE, proxy = FALSE) 
+  tmin <- dsclimtools::read_dsclim("../Public/Data/dsclim_v1/netcdf", "tasmin", start, end, calendar_dates = TRUE, proxy = FALSE) 
   
   tmin_agg <- tmin |>
     time.aggregate(time) |> 
@@ -465,7 +427,7 @@ prepare.env.data <- function(start, end){
   rm(tmin)
   gc()
   
-  t <- dsclimtools::read_dsclim("./dsclim", "tas", start, end, calendar_dates = TRUE, proxy = FALSE)
+  t <- dsclimtools::read_dsclim("../Public/Data/dsclim_v1/netcdf", "tas", start, end, calendar_dates = TRUE, proxy = FALSE)
   
   t_agg <- t |>
     time.aggregate(time) |>
@@ -478,7 +440,7 @@ prepare.env.data <- function(start, end){
   rm(t)
   gc()
   
-  prec <- dsclimtools::read_dsclim("./dsclim", "pr", start, end, calendar_dates = TRUE, proxy = FALSE)
+  prec <- dsclimtools::read_dsclim("../Public/Data/dsclim_v1/netcdf", "pr", start, end, calendar_dates = TRUE, proxy = FALSE)
   
   prec_agg <- prec |>
     time.aggregate(time) |>
@@ -842,8 +804,9 @@ plot.omegas <- function(corr_plot, sp_order) {
     ylab("") +
     xlab("") +
     theme_bw() +
-    theme(legend.title= element_blank(), axis.text.x=element_text(angle = 45, hjust = 1)) +
-    theme(text = element_text(size=rel(4.5)), legend.text = element_text(size=10),
+    theme(legend.title= element_blank(), axis.text.x=element_text(size = 14, angle = 45, hjust = 1),
+          axis.text.y = element_text(size = 14),
+          legend.text = element_text(size=10),
           legend.position = "inside",
           legend.position.inside = c(0.1, 0.2))
   
@@ -1104,7 +1067,7 @@ past.projection <- function(climate, soil, species, model, CM, period, i) {
 
 
 weight.rast <- function(r, th) {
-  r <- r %>% unwrap()
+  # r <- r %>% unwrap()
   
   recl_r <- ifel(r >= th, 1, NA)
   
@@ -1942,7 +1905,7 @@ prepare.future.data <- function(start, end, rcp, gcm){
   }
   
   
-  tmax <- dsclimtools::read_dsclim("./dsclim", "tasmax", start, end, calendar_dates = TRUE,
+  tmax <- dsclimtools::read_dsclim("../Public/Data/dsclim_v1/netcdf", "tasmax", start, end, calendar_dates = TRUE,
                                    proxy = FALSE, rcp = rcp, gcm = gcm)
   
   
@@ -1955,7 +1918,7 @@ prepare.future.data <- function(start, end, rcp, gcm){
     })
   
   
-  tmin <- dsclimtools::read_dsclim("./dsclim", "tasmin", start, end, calendar_dates = TRUE,
+  tmin <- dsclimtools::read_dsclim("../Public/Data/dsclim_v1/netcdf", "tasmin", start, end, calendar_dates = TRUE,
                                    proxy = FALSE, rcp = rcp, gcm = gcm)
   
   
@@ -1968,7 +1931,7 @@ prepare.future.data <- function(start, end, rcp, gcm){
     })
   
   
-  t <- dsclimtools::read_dsclim("./dsclim", "tas", start, end, calendar_dates = TRUE,
+  t <- dsclimtools::read_dsclim("../Public/Data/dsclim_v1/netcdf", "tas", start, end, calendar_dates = TRUE,
                                 proxy = FALSE, rcp = rcp, gcm = gcm)
   
   
@@ -1981,7 +1944,7 @@ prepare.future.data <- function(start, end, rcp, gcm){
     })
   
   
-  prec <- dsclimtools::read_dsclim("./dsclim", "pr", start, end, calendar_dates = TRUE,
+  prec <- dsclimtools::read_dsclim("../Public/Data/dsclim_v1/netcdf", "pr", start, end, calendar_dates = TRUE,
                                    proxy = FALSE, rcp = rcp, gcm = gcm)
   
   
@@ -2540,7 +2503,8 @@ plot.arrange <- function(pollen_data, mask, all_timeseries_pred, complection_ras
   
   
   pal <- c(
-    "#f1b6da",  # rosa pastel
+    # "#f1b6da",  # rosa pastel
+    "deeppink",  # rosa pastel
     "#ffffbf",  # amarillo crema (centro claro)
     "#e6f5d0",  # verde muy claro
     "#b8e186",  # verde medio
@@ -2667,7 +2631,7 @@ plot.diff <- function(fut_subset, single_fut_subset, th, myspecies) {
   
   ggplot() +
     geom_tile(data = join, aes(x = x, y = y, fill = `JSDM - SDM`)) +
-    scale_fill_gradient2(na.value = "darkblue") +
+    scale_fill_gradient2(na.value = "grey") +
     geom_contour(data = recla_sdm, aes(x = x, y = y, z = th_pred),
                  breaks = c(0.5), colour = "black", linewidth = 0.4) +
     xlab("Longitude") +
@@ -2831,7 +2795,7 @@ plot.diff.sup <- function(fut_subset, single_fut_subset, th, myspecies) {
 
   ggplot() +
     geom_tile(data = join, aes(x = x, y = y, fill = `JSDM - SDM`)) +
-    scale_fill_gradient2(na.value = "darkblue") +
+    scale_fill_gradient2(na.value = "grey") +
     geom_contour(data = recla_sdm, aes(x = x, y = y, z = th_pred),
                  breaks = c(0.5), colour = "black", linewidth = 0.4) +
     xlab("Longitude") +
@@ -2842,4 +2806,160 @@ plot.diff.sup <- function(fut_subset, single_fut_subset, th, myspecies) {
     theme(legend.position = "bottom")
 
   ggsave("./figures/diff_sup_v2.jpg", height = 14, width = 8)
+}
+
+extract.beta.comparison <- function(jsdm_model, sdm_models, myspecies, i) {
+  
+  # Extract posterior mean beta coefficients
+  beta_j <- Hmsc::getPostEstimate(jsdm_model, parName = "Beta")$mean
+  
+  beta_s <- lapply(sdm_models, function(x) {
+    Hmsc::getPostEstimate(x, parName = "Beta")$mean
+  })
+  
+  names(beta_s) <- myspecies
+  
+  # Get beta names from the JSDM formula
+  beta_names <- colnames(
+    model.matrix(jsdm_model$XFormula, data = jsdm_model$XData)
+  )
+  
+  rownames(beta_j) <- beta_names
+  
+  beta_s <- lapply(beta_s, function(x) {
+    rownames(x) <- beta_names
+    x
+  })
+  
+  # Long table for plotting/comparison, excluding the intercept
+  beta_comparison <- do.call(rbind, lapply(seq_along(myspecies), function(j) {
+    
+    sp <- myspecies[j]
+    
+    data.frame(
+      i = i,
+      species = sp,
+      variable = beta_names[-1],
+      beta_JSDM = beta_j[-1, sp],
+      beta_SDM = beta_s[[sp]][-1, 1],
+      stringsAsFactors = FALSE
+    )
+  }))
+  
+  beta_comparison
+}
+
+plot.betas.comp <- function(all_betas_comparison) {
+  all_betas <- bind_rows(all_betas_comparison)
+  
+  beta_cor <- all_betas %>%
+    filter(variable != "(Intercept)") %>%
+    group_by(species, i) %>%
+    summarise(
+      cor_beta = cor(beta_JSDM, beta_SDM),
+      .groups = "drop"
+    ) %>%
+    group_by(species) %>%
+    summarise(
+      r = round(mean(cor_beta), 2)
+    )
+  
+  ggplot(
+    all_betas %>% filter(variable != "(Intercept)"),
+    aes(
+      x = beta_SDM,
+      y = beta_JSDM
+    )
+  ) +
+    geom_point(alpha = 0.4) +
+    geom_abline(
+      slope = 1,
+      intercept = 0,
+      linetype = "dashed"
+    ) +
+    facet_wrap(
+      ~ species,
+      scales = "free"
+    ) +
+    geom_text(
+      data = beta_cor,
+      aes(
+        x = -Inf,
+        y = Inf,
+        label = paste0("r = ", r)
+      ),
+      inherit.aes = FALSE,
+      hjust = -0.1,
+      vjust = 1.2,
+      size = 3
+    ) +
+    theme_bw() +
+    labs(
+      x = expression(beta[SDM]),
+      y = expression(beta[JSDM])
+    )
+  
+  ggsave("./figures/betas_comp.jpg", height = 4, width = 8)
+  
+  all_betas
+}
+
+diagnostics.table <- function(model, i) {
+  
+  mpost <- convertToCodaObject(model)
+  
+  get_diag <- function(x, parameter) {
+    
+    ess <- effectiveSize(x)
+    
+    psrf <- gelman.diag(
+      x,
+      multivariate = FALSE
+    )$psrf[, 1]
+    
+    tibble(
+      i = i,
+      parameter = parameter,
+      ess = mean(ess, na.rm = TRUE),
+      psrf = mean(psrf, na.rm = TRUE)
+    )
+    
+  }
+  
+  summary <- bind_rows(
+    get_diag(mpost$Beta, "Beta"),
+    get_diag(mpost$V, "V"),
+    get_diag(mpost$Eta[[1]], "Eta"),
+    get_diag(mpost$Lambda[[1]], "Lambda")
+  )
+  
+  summary
+}
+
+export.diag <- function(all_diag_table) {
+  diag <- bind_rows(all_diag_table)
+  
+  diag_summary <- diag %>%
+    group_by(parameter) %>%
+    summarise(
+      ESS = sprintf(
+        "%.1f ± %.1f",
+        mean(ess, na.rm = TRUE),
+        sd(ess, na.rm = TRUE)
+      ),
+      PSRF = sprintf(
+        "%.2f ± %.2f",
+        mean(psrf, na.rm = TRUE),
+        sd(psrf, na.rm = TRUE)
+      ),
+      .groups = "drop"
+    )
+  
+  diag_summary
+  
+  openxlsx::write.xlsx(
+    diag_summary,
+    "diag_summary.xlsx",
+    rowNames = FALSE
+  )
 }
